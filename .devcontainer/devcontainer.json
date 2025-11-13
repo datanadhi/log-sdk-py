@@ -6,7 +6,7 @@
     "runArgs": [
         "--network=datanadhi-net",
         "--name",
-        "data-nadhi-sdk"
+        "datanadhi-log-py"
     ],
     "mounts": [
         "source=${env:HOME}/.ssh,target=/home/vscode/.ssh,type=bind"

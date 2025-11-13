@@ -1,7 +1,7 @@
 [project]
-name = "data-nadhi-sdk"
+name = "datanadhi-log"
 version = "0.1.0"
-description = "A Python SDK for Data Nadhi"
+description = "Data Nadhi Python logging SDK"
 requires-python = ">=3.11"
 authors = [
     { name = "Nishaanth S P", email = "nishaanth.sp@dataarena.space" }
