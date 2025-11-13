@@ -51,7 +51,7 @@ All components are connected through a shared Docker network, making local setup
 
 ## 📚 What's Inside this repository
 
-This is the Python SDK for Data Nadhi that acts as a normal logger but also sends the request to the Server using the API when required
+This is the Python logging SDK (`datanadhi` package) for Data Nadhi that acts as a normal logger but also sends the request to the Server using the API when required
 
 ### Tech Stack
 - **Python(logging)** - Framework used to create temporal worker
