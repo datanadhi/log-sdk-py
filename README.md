@@ -78,10 +78,10 @@ This is the Python logging SDK (`datanadhi` package) for Data Nadhi that acts as
     ```
 2. Add the following to your `.env` file
     ```bash
-    DATA_NADHI_API_KEY=<API-KEY>
-    DATA_NADHI_SERVER_HOST=http://localhost
+    DATANADHI_API_KEY=<API-KEY>
+    DATANADHI_SERVER_HOST=http://localhost
     ```
-    - If your service runs inside the same Docker network, remove the `DATA_NADHI_SERVER_HOST` variable.
+    - If your service runs inside the same Docker network, remove the `DATANADHI_SERVER_HOST` variable.
 3. Add Log config file in `.datanadhi` folder - See [Log Config](/docs/architecture/sdk/log-config.md)
 4. Try logging
     ```python
@@ -91,7 +91,7 @@ This is the Python logging SDK (`datanadhi` package) for Data Nadhi that acts as
 
     def main():
         # Set up API key (in production, use environment variable)
-        # os.environ["DATA_NADHI_API_KEY"] = "dummy_api_key_123"
+        # os.environ["DATANADHI_API_KEY"] = "dummy_api_key_123"
 
         # Initialize logger with module name
         logger = DataNadhiLogger(module_name="test_app")

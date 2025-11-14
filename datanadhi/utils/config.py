@@ -111,7 +111,7 @@ def get_api_key(explicit_api_key: str | None = None) -> str:
 
     This function tries to get the API key in this order:
     1. From the explicit_api_key parameter if provided
-    2. From the DATA_NADHI_API_KEY environment variable
+    2. From the DATANADHI_API_KEY environment variable
     3. Raises an error if no key is found
 
     Args:
@@ -126,7 +126,7 @@ def get_api_key(explicit_api_key: str | None = None) -> str:
     if explicit_api_key:
         return explicit_api_key
 
-    env_key = os.environ.get("DATA_NADHI_API_KEY")
+    env_key = os.environ.get("DATANADHI_API_KEY")
     if not env_key:
-        raise ValueError("API key not provided via parameter or DATA_NADHI_API_KEY env")
+        raise ValueError("API key not provided via parameter or DATANADHI_API_KEY env")
     return env_key

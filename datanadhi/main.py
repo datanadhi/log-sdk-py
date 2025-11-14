@@ -21,9 +21,9 @@ Example:
     ```
 
 Environment Variables:
-    DATA_NADHI_API_KEY: API key for authentication
-    DATA_NADHI_STACKLEVEL: Stack level for logging (default: 2)
-    DATA_NADHI_SKIP_STACK: Stack frames to skip for caller info (default: 4)
+    DATANADHI_API_KEY: API key for authentication
+    DATANADHI_STACKLEVEL: Stack level for logging (default: 2)
+    DATANADHI_SKIP_STACK: Stack frames to skip for caller info (default: 4)
 """
 
 import contextvars
@@ -87,12 +87,12 @@ class DataNadhiLogger:
         if stacklevel is not None:
             self.stacklevel = stacklevel
         else:
-            self.stacklevel = int(os.environ.get("DATA_NADHI_STACKLEVEL", 2))
+            self.stacklevel = int(os.environ.get("DATANADHI_STACKLEVEL", 2))
 
         if skip_stack is not None:
             self.skip_stack = skip_stack
         else:
-            self.skip_stack = int(os.environ.get("DATA_NADHI_SKIP_STACK", 4))
+            self.skip_stack = int(os.environ.get("DATANADHI_SKIP_STACK", 4))
 
         self.logger = logging.getLogger(self.module_name)
         if not self.logger.handlers:
