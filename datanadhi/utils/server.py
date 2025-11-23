@@ -19,8 +19,10 @@ def trigger_pipeline(api_key: str, pipeline_id: str, log_data: dict) -> dict:
     """
 
     # Use the Docker container name as the hostname
-    nadhi_server_host = os.getenv("DATANADHI_SERVER_HOST", "http://data-nadhi-server")
-    url = f"{nadhi_server_host}:5000/api/entities/pipeline/trigger"
+    nadhi_server_host = os.getenv(
+        "DATANADHI_SERVER_HOST", "http://data-nadhi-server:5000"
+    )
+    url = f"{nadhi_server_host}/api/entities/pipeline/trigger"
     headers = {"x-datanadhi-api-key": api_key, "Content-Type": "application/json"}
     payload = {"pipeline_id": pipeline_id, "log_data": log_data}
     response = requests.post(url, headers=headers, json=payload, timeout=10)

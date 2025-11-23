@@ -56,9 +56,9 @@ class JsonFormatter(logging.Formatter):
         Returns:
             A JSON string containing all log record fields
         """
-        timestamp = datetime.datetime.fromtimestamp(record.created).isoformat()
+        timestamp = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
         entry = {
-            "timestamp": f"{timestamp}Z",  # Add Z to indicate UTC
+            "timestamp": getattr(record, "timestamp", timestamp),
             "module_name": record.module,
             "function_name": record.funcName,
             "line_number": record.lineno,

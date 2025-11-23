@@ -1,31 +1,3 @@
-"""Advanced logging system with rule-based filtering and pipeline triggers.
-
-This module implements the core DataNadhiLogger class, which provides:
-- Rule-based log filtering using exact, partial, and regex matches
-- Automated pipeline triggering based on log content
-- JSON formatting with context and trace ID support
-- Thread-safe trace ID propagation using contextvars
-- Configurable stdout output based on rules
-
-Example:
-    ```python
-    from datanadhi import DataNadhiLogger
-
-    # Initialize with module name and optional API key
-    logger = DataNadhiLogger(module_name="my_app")
-
-    # Log with context data that can trigger rules
-    logger.info("User login", context={
-        "user": {"id": 123, "action": "login"}
-    })
-    ```
-
-Environment Variables:
-    DATANADHI_API_KEY: API key for authentication
-    DATANADHI_STACKLEVEL: Stack level for logging (default: 2)
-    DATANADHI_SKIP_STACK: Stack frames to skip for caller info (default: 4)
-"""
-
 import contextvars
 import datetime
 import logging
@@ -33,74 +5,130 @@ import os
 import sys
 import threading
 import uuid
+from pathlib import Path
 
-from .formatters.json_default_formatter import JsonFormatter
-from .utils.config import ConfigCache, get_api_key, load_config
-from .utils.datatypes import RuleEvaluationResult
-from .utils.rule_engine import evaluate_rules
-from .utils.server import trigger_pipeline
+from dotenv import load_dotenv
 
-# Thread-safe trace ID storage
+from datanadhi.logger import Handler, JsonFormatter, StreamHandler
+from datanadhi.utils.config import ResolvedConfig
+from datanadhi.utils.echopost import ensure_binary_exists
+from datanadhi.utils.rules import (
+    ResolvedRules,
+    RuleActions,
+    RuleEvaluationResult,
+    evaluate_rules,
+)
+from datanadhi.utils.server import trigger_pipeline
+
+load_dotenv()
+
+_NOT_SET = object()
 trace_id_var = contextvars.ContextVar("trace_id", default=None)
 
-_config_cache = ConfigCache()
 
-
-class DataNadhiLogger:
-    """Advanced logger with rule-based filtering and pipeline triggers.
-
-    This class extends Python's logging functionality with:
-    - Rule-based filtering of log messages
-    - Automatic pipeline triggering based on log content
-    - Structured logging with JSON formatting
-    - Context and trace ID support for distributed tracing
-    - Configurable stack trace handling
-
-    Args:
-        module_name: Name to identify this logger instance
-        api_key: Data Nadhi API key for authentication
-        log_formatter: Custom formatter, defaults to JsonFormatter
-        config_path: Path to rule configuration file
-        log_level: Minimum log level to process
-        stacklevel: Override default stack level for logging
-        skip_stack: Override default stack frames to skip for caller info
-    """
-
+class Logger:
     def __init__(
         self,
         module_name: str | None = None,
         *,
-        api_key: str | None = None,
-        log_formatter: logging.Formatter | None = None,
-        config_path: str | None = None,
-        log_level: int = logging.DEBUG,
-        stacklevel: int | None = None,
-        skip_stack: int | None = None,
-        log_datanadhi_errors: bool = True,
-    ) -> None:
-        # Initialize core attributes
-        self.module_name = module_name or "datanadhi_module"
-        self.api_key = get_api_key(api_key)
-        self.rules = _config_cache.value or load_config(_config_cache, config_path)
-        self.log_datanadhi_errors = log_datanadhi_errors
-        # Configure stack trace handling
-        if stacklevel is not None:
-            self.stacklevel = stacklevel
-        else:
-            self.stacklevel = int(os.environ.get("DATANADHI_STACKLEVEL", 2))
+        handlers: list[Handler] | None = None,
+        datanadhi_dir: Path | None = ".datanadhi",
+        log_level: int | object = _NOT_SET,
+        stack_level: int | object = _NOT_SET,
+        skip_stack: int | object = _NOT_SET,
+        echopost_disable: bool = False,
+    ):
+        self.module_name = module_name
+        self.no_rules_set = False
+        self._set_api_key()
+        self.datanadhi_dir = Path(datanadhi_dir).absolute()
+        self._initialise_config(
+            log_level=log_level,
+            stack_level=stack_level,
+            skip_stack=skip_stack,
+            echopost_disable=echopost_disable,
+        )
+        # Initialising logger before echopost so that we can log errors from echopost
+        self._setup_logger(handlers)
+        self._initialise_rules_and_echopost()
 
-        if skip_stack is not None:
-            self.skip_stack = skip_stack
-        else:
-            self.skip_stack = int(os.environ.get("DATANADHI_SKIP_STACK", 4))
+    @property
+    def stack_level(self):
+        return self.config.get("stack_level", 2)
 
-        self.logger = logging.getLogger(self.module_name)
-        if not self.logger.handlers:
-            handler = logging.StreamHandler(sys.stdout)
-            handler.setFormatter(log_formatter or JsonFormatter())
-            self.logger.addHandler(handler)
-            self.logger.setLevel(log_level)
-            self.logger.propagate = False
+    @property
+    def skip_stack(self):
+        return self.config.get("skip_stack", 4)
+
+    def can_log(self, incoming_level: int):
+        return incoming_level > self.config["datanadhi_log_level"]
+
+    def _initialise_config(self, **config_args):
+        config_args = {k: v for k, v in config_args.items() if v is not _NOT_SET}
+        self.config = ResolvedConfig(self.datanadhi_dir, **config_args).get()
+
+    def _initialise_rules_and_echopost(self):
+        self.rules: RuleActions = ResolvedRules(self.datanadhi_dir).get()
+        success, error = True, None
+        if self.rules:
+            success, error = ensure_binary_exists(self.datanadhi_dir, self.config)
+        else:
+            self.no_rules_set = True
+            self.warning(
+                "No rules set! Defaulting to stdout True",
+                context={
+                    "reason": "Rules Empty",
+                    "datanadhi_dir": str(self.datanadhi_dir),
+                },
+                trace_id=f"datanadhi-internal-{self.module_name}",
+                _datanadhi_internal=True,
+            )
+            return
+        if success:
+            self.debug(
+                "Echopost binary now exists",
+                trace_id=f"datanadhi-internal-{self.module_name}",
+                _datanadhi_internal=True,
+            )
+        if not success:
+            if "message" in error:
+                message = error.get("message")
+                del error["message"]
+            else:
+                message = "Unable to download EchoPost binary"
+            self.warning(
+                message,
+                context=error,
+                trace_id=f"datanadhi-internal-{self.module_name}",
+                _datanadhi_internal=True,
+            )
+
+    def _set_api_key(self):
+        env_key = os.environ.get("DATANADHI_API_KEY")
+        if not env_key:
+            raise ValueError(
+                "API key not provided via parameter or DATANADHI_API_KEY env"
+            )
+        self.api_key = env_key
+
+    def _setup_logger(self, handlers: list[Handler] | None):
+        self.logger = logging.getLogger(f"{self.module_name}.{id(self)}")
+        if self.logger.handlers:
+            return
+        if not handlers:
+            handlers = [
+                Handler(
+                    handler=StreamHandler(sys.stdout),
+                    formatter=JsonFormatter(),
+                )
+            ]
+        for h in handlers:
+            new_handler = h.handler
+            new_handler.setFormatter(h.formatter or JsonFormatter())
+            self.logger.addHandler(new_handler)
+
+        self.logger.setLevel(self.config["log_level"])
+        self.logger.propagate = False
 
     def _get_caller_info(self) -> tuple[str, int, str, str]:
         """Get information about the calling code's location.
@@ -123,6 +151,14 @@ class DataNadhiLogger:
         module_name = frame.f_globals.get("__name__")
         return filename, lineno, function_name, module_name
 
+    @staticmethod
+    def _get_trace_id(trace_id: str = None):
+        if trace_id is not None:
+            trace_id_var.set(trace_id)
+        if trace_id_var.get() is None:
+            trace_id_var.set(str(uuid.uuid4()))
+        return trace_id_var.get()
+
     def _build_internal_payload(
         self, level: str, message: str, context: dict = {}
     ) -> dict:
@@ -144,11 +180,13 @@ class DataNadhiLogger:
             Dictionary containing the complete log payload
         """
         filename, lineno, function_name, module_name = self._get_caller_info()
+        timestamp = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
 
         return {
             "message": message,
             "trace_id": trace_id_var.get(),
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "timestamp": timestamp,
+            "module_name": self.module_name,
             "log_record": {
                 "filename": filename,
                 "function_name": function_name,
@@ -157,6 +195,14 @@ class DataNadhiLogger:
                 "module_name": module_name,
             },
             "context": context,
+        }
+
+    def _get_extras(self, context, trace_id, payload={}):
+        timestamp = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+        return {
+            "timestamp": payload.get("timestamp", timestamp),
+            "context": context,
+            "trace_id": payload.get("trace_id", self._get_trace_id(trace_id)),
         }
 
     def rule_result(
@@ -186,12 +232,9 @@ class DataNadhiLogger:
             - Whether to output to stdout
             - The complete log payload
         """
-        if trace_id is not None:
-            trace_id_var.set(trace_id)
-        if trace_id_var.get() is None:
-            trace_id_var.set(str(uuid.uuid4()))
+        self._get_trace_id(trace_id)
         payload = self._build_internal_payload(level, message, context)
-        pipelines, stdout_flag = evaluate_rules(payload, rules=self.rules)
+        pipelines, stdout_flag = evaluate_rules(payload, self.rules)
         return RuleEvaluationResult(
             pipelines=pipelines, stdout=stdout_flag, payload=payload
         )
@@ -222,9 +265,12 @@ class DataNadhiLogger:
         for pid in pipelines:
             threading.Thread(target=trigger_pipeline_sync, args=(pid, payload)).start()
 
-    # Convenience methods for different log levels
     def debug(
-        self, message: str, context: dict = {}, trace_id: str | None = None
+        self,
+        message: str,
+        context: dict = {},
+        trace_id: str | None = None,
+        _datanadhi_internal=False,
     ) -> None:
         """Log a DEBUG level message with optional context and trace ID.
 
@@ -233,17 +279,22 @@ class DataNadhiLogger:
             context: Additional structured data
             trace_id: Optional trace ID for request tracking
         """
+        if self.no_rules_set or (_datanadhi_internal and self.can_log(logging.DEBUG)):
+            extras = self._get_extras(context, trace_id)
+            self.logger.debug(message, extra=extras, stacklevel=self.stack_level)
+            return
         rule_result = self.rule_result("DEBUG", message, context, trace_id)
         if rule_result.stdout:
-            extra = {
-                "context": rule_result.payload["context"],
-                "trace_id": rule_result.payload["trace_id"],
-            }
-            self.logger.debug(message, extra=extra, stacklevel=self.stacklevel)
+            extra = self._get_extras(context, trace_id, rule_result.payload)
+            self.logger.debug(message, extra=extra, stacklevel=self.stack_level)
         self.trigger_pipelines(rule_result.payload, rule_result.pipelines)
 
     def info(
-        self, message: str, context: dict = {}, trace_id: str | None = None
+        self,
+        message: str,
+        context: dict = {},
+        trace_id: str | None = None,
+        _datanadhi_internal=False,
     ) -> None:
         """Log an INFO level message with optional context and trace ID.
 
@@ -252,17 +303,22 @@ class DataNadhiLogger:
             context: Additional structured data
             trace_id: Optional trace ID for request tracking
         """
+        if self.no_rules_set or (_datanadhi_internal and self.can_log(logging.INFO)):
+            extras = self._get_extras(context, trace_id)
+            self.logger.info(message, extra=extras, stacklevel=self.stack_level)
+            return
         rule_result = self.rule_result("INFO", message, context, trace_id)
         if rule_result.stdout:
-            extra = {
-                "context": rule_result.payload["context"],
-                "trace_id": rule_result.payload["trace_id"],
-            }
-            self.logger.info(message, extra=extra, stacklevel=self.stacklevel)
+            extra = self._get_extras(context, trace_id, rule_result.payload)
+            self.logger.info(message, extra=extra, stacklevel=self.stack_level)
         self.trigger_pipelines(rule_result.payload, rule_result.pipelines)
 
     def warning(
-        self, message: str, context: dict = {}, trace_id: str | None = None
+        self,
+        message: str,
+        context: dict = {},
+        trace_id: str | None = None,
+        _datanadhi_internal=False,
     ) -> None:
         """Log a WARNING level message with optional context and trace ID.
 
@@ -271,17 +327,22 @@ class DataNadhiLogger:
             context: Additional structured data
             trace_id: Optional trace ID for request tracking
         """
+        if self.no_rules_set or (_datanadhi_internal and self.can_log(logging.WARNING)):
+            extras = self._get_extras(context, trace_id)
+            self.logger.warning(message, extra=extras, stacklevel=self.stack_level)
+            return
         rule_result = self.rule_result("WARNING", message, context, trace_id)
         if rule_result.stdout:
-            extra = {
-                "context": rule_result.payload["context"],
-                "trace_id": rule_result.payload["trace_id"],
-            }
-            self.logger.warning(message, extra=extra, stacklevel=self.stacklevel)
+            extra = self._get_extras(context, trace_id, rule_result.payload)
+            self.logger.warning(message, extra=extra, stacklevel=self.stack_level)
         self.trigger_pipelines(rule_result.payload, rule_result.pipelines)
 
     def error(
-        self, message: str, context: dict = {}, trace_id: str | None = None
+        self,
+        message: str,
+        context: dict = {},
+        trace_id: str | None = None,
+        _datanadhi_internal=False,
     ) -> None:
         """Log an ERROR level message with optional context and trace ID.
 
@@ -290,17 +351,22 @@ class DataNadhiLogger:
             context: Additional structured data
             trace_id: Optional trace ID for request tracking
         """
+        if self.no_rules_set or (_datanadhi_internal and self.can_log(logging.ERROR)):
+            extras = self._get_extras(context, trace_id)
+            self.logger.error(message, extra=extras, stacklevel=self.stack_level)
+            return
         rule_result = self.rule_result("ERROR", message, context, trace_id)
         if rule_result.stdout:
-            extra = {
-                "context": rule_result.payload["context"],
-                "trace_id": rule_result.payload["trace_id"],
-            }
-            self.logger.error(message, extra=extra, stacklevel=self.stacklevel)
+            extra = self._get_extras(context, trace_id, rule_result.payload)
+            self.logger.error(message, extra=extra, stacklevel=self.stack_level)
         self.trigger_pipelines(rule_result.payload, rule_result.pipelines)
 
     def critical(
-        self, message: str, context: dict = {}, trace_id: str | None = None
+        self,
+        message: str,
+        context: dict = {},
+        trace_id: str | None = None,
+        _datanadhi_internal=False,
     ) -> None:
         """Log a CRITICAL level message with optional context and trace ID.
 
@@ -309,13 +375,16 @@ class DataNadhiLogger:
             context: Additional structured data
             trace_id: Optional trace ID for request tracking
         """
+        if self.no_rules_set or (
+            _datanadhi_internal and self.can_log(logging.CRITICAL)
+        ):
+            extras = self._get_extras(context, trace_id)
+            self.logger.critical(message, extra=extras, stacklevel=self.stack_level)
+            return
         rule_result = self.rule_result("CRITICAL", message, context, trace_id)
         if rule_result.stdout:
-            extra = {
-                "context": rule_result.payload["context"],
-                "trace_id": rule_result.payload["trace_id"],
-            }
-            self.logger.critical(message, extra=extra, stacklevel=self.stacklevel)
+            extra = self._get_extras(context, trace_id, rule_result.payload)
+            self.logger.critical(message, extra=extra, stacklevel=self.stack_level)
         self.trigger_pipelines(rule_result.payload, rule_result.pipelines)
 
     @staticmethod

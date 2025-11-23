@@ -7,7 +7,7 @@ and determining which pipelines to trigger and whether to output to stdout.
 import re
 from typing import Any
 
-from .datatypes import ConditionType, Rule, RuleCondition
+from datanadhi.utils.rules.data_model import Condition, ConditionType, RuleActions
 
 
 def get_nested_value(data: dict, key_path: str) -> Any:
@@ -29,7 +29,7 @@ def get_nested_value(data: dict, key_path: str) -> Any:
     return val
 
 
-def match_condition(value: Any, condition: RuleCondition) -> bool:
+def match_condition(value: Any, condition: Condition) -> bool:
     """Check if a value matches a condition according to its type.
 
     Args:
@@ -45,17 +45,21 @@ def match_condition(value: Any, condition: RuleCondition) -> bool:
     cond_type = condition.type
     cond_val = condition.value
 
+    result = False
     if cond_type == ConditionType.EXACT:
-        return value == cond_val
-    if cond_type == ConditionType.PARTIAL:
-        return cond_val in str(value)
-    if cond_type == ConditionType.REGEX:
-        return bool(re.match(cond_val, str(value)))
-    return False
+        result = value == cond_val
+    elif cond_type == ConditionType.PARTIAL:
+        result = cond_val in str(value)
+    elif cond_type == ConditionType.REGEX:
+        result = bool(re.match(cond_val, str(value)))
+
+    if condition.negate:
+        return not result
+    return result
 
 
 def evaluate_rules(
-    log_dict: dict, rules: list[Rule] | None = None
+    log_dict: dict, rule_actions: RuleActions | None = None
 ) -> tuple[list[str], bool]:
     """Evaluate log entry against a set of rules to determine actions.
 
@@ -78,39 +82,24 @@ def evaluate_rules(
     try:
         pipelines_to_trigger = set()
         stdout_flag = False
-        if not rules:
+        if not rule_actions:
             return [], stdout_flag
 
-        for rule in rules:
-            conditions = rule.conditions
-            any_condition_match = rule.any_condition_match
-            all_conditions_match = True
-
-            for condition in conditions:
-                # Get the value from the log entry using the condition's key path
-                value = get_nested_value(log_dict, condition.key)
-                condition_match = match_condition(value, condition)
-
-                if condition_match:
-                    # For any_condition_match=True, trigger immediately on first match
-                    if any_condition_match:
-                        pipelines_to_trigger.update(rule.pipelines)
-                        if rule.stdout:
-                            stdout_flag = True
+        for action, rules in rule_actions:
+            for rule in rules:
+                conditions_match = not rule.any_condition_match
+                for condition in rule.conditions:
+                    value = get_nested_value(log_dict, condition.key)
+                    condition_match = match_condition(value, condition)
+                    if condition_match and rule.any_condition_match:
+                        conditions_match = True
                         break
-                else:
-                    # For any_condition_match=False, fail fast on first non-match
-                    if any_condition_match:
-                        continue
-                    all_conditions_match = False
-                    break
-
-            # For any_condition_match=False, trigger only if all conditions matched
-            if all_conditions_match and not any_condition_match:
-                pipelines_to_trigger.update(rule.pipelines)
-                if rule.stdout:
-                    stdout_flag = True
-
+                    if not (condition_match or rule.any_condition_match):
+                        conditions_match = False
+                        break
+                if conditions_match:
+                    pipelines_to_trigger.update(action.pipelines)
+                    stdout_flag = stdout_flag or action.stdout
         return list(pipelines_to_trigger), stdout_flag
     except Exception as e:
         print(f"Error evaluating rules: {e}")
