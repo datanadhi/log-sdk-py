@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from datanadhi.utils.config.builder import ConfigBuilder
+from datanadhi.config.builder import ConfigBuilder
 from datanadhi.utils.files import read_from_json
 
 
@@ -14,9 +14,9 @@ class ResolvedConfig:
         "skip_stack",
     }
 
-    def __init__(self, datanadhi_dir: Path, **overrides):
+    def __init__(self, datanadhi_dir: Path, not_set=object(), **kwargs):
         self.datanadhi_dir = datanadhi_dir
-        self.overrides = overrides
+        self.overrides = {k: v for k, v in kwargs.items() if v is not not_set}
         self.path = Path(datanadhi_dir) / ".config.resolved.json"
 
     def _load_or_build(self):

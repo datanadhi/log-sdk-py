@@ -4,13 +4,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from datanadhi.utils.files import load_from_yaml, read_from_json, write_to_json
-from datanadhi.utils.rules.data_model import (
+from datanadhi.rules.data_model import (
     RawAction,
     RawCondition,
     RawRule,
     RuleActions,
 )
+from datanadhi.utils.files import load_from_yaml, read_from_json, write_to_json
 
 
 class ResolvedRules:
@@ -46,8 +46,8 @@ class ResolvedRules:
                 return None
 
             return rule
-        except ValidationError as e:
-            print(e)
+        except ValidationError:
+            # Silently ignore invalid rules
             return None
 
     def add_rule(self, rule: RawRule):
@@ -78,7 +78,7 @@ class ResolvedRules:
             if action.pipelines:
                 rule_json["action"]["pipelines"] = list(action.pipelines)
 
-            if "or" in rules:
+            if "or" in rules and len(rules["or"]) > 0:
                 rule_json["rules"].append(
                     {
                         "any_condition_match": True,

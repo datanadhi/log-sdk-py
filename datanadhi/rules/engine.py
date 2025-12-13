@@ -7,7 +7,7 @@ and determining which pipelines to trigger and whether to output to stdout.
 import re
 from typing import Any
 
-from datanadhi.utils.rules.data_model import Condition, ConditionType, RuleActions
+from datanadhi.rules.data_model import Condition, ConditionType, RuleActions
 
 
 def get_nested_value(data: dict, key_path: str) -> Any:
@@ -101,6 +101,6 @@ def evaluate_rules(
                     pipelines_to_trigger.update(action.pipelines)
                     stdout_flag = stdout_flag or action.stdout
         return list(pipelines_to_trigger), stdout_flag
-    except Exception as e:
-        print(f"Error evaluating rules: {e}")
+    except Exception:
+        # Silently return empty on evaluation error
         return [], False

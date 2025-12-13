@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package logagent;
+option go_package = "github.com/datanadhi/echopost/logagentpb";
+
+service LogAgent {
+  // SDK sends one log message
+  rpc SendLog (LogRequest) returns (LogResponse);
+}
+
+message LogRequest {
+  string json_data = 1;  // raw JSON string
+  repeated string pipelines = 2;
+  string api_key = 3;
+}
+
+message LogResponse {
+  bool success = 1;
+  string message = 2;
+}

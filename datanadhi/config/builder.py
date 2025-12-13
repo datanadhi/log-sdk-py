@@ -11,9 +11,14 @@ class ConfigBuilder:
 
         self.mapping = {
             "server_host": {
-                "config": "server.server_host",
+                "config": "server.host",
                 "env": "DATANADHI_SERVER_HOST",
                 "default": "http://data-nadhi-server:5000",
+            },
+            "fallback_server_host": {
+                "config": "server.fallback_host",
+                "env": "DATANADHI_FALLBACK_SERVER_HOST",
+                "default": "http://datanadhi-fallback-server:5001",
             },
             "log_level": {
                 "config": "log.level",
@@ -34,6 +39,21 @@ class ConfigBuilder:
             "echopost_disable": {
                 "config": "echopost.disable",
                 "default": False,
+            },
+            "async_queue_size": {
+                "config": "async.queue_size",
+                "env": "DATANADHI_QUEUE_SIZE",
+                "default": 1000,
+            },
+            "async_workers": {
+                "config": "async.workers",
+                "env": "DATANADHI_WORKERS",
+                "default": 2,
+            },
+            "async_exit_timeout": {
+                "config": "async.exit_timeout",
+                "env": "DATANADHI_EXIT_TIMEOUT",
+                "default": 5,
             },
         }
 
@@ -70,6 +90,10 @@ class ConfigBuilder:
 
     def build(self):
         resolved = {k: self._resolve(spec) for k, spec in self.mapping.items()}
+        if resolved["server_host"].endswith("/"):
+            resolved["server_host"] = resolved["server_host"][:-1]
+        if resolved["fallback_server_host"].endswith("/"):
+            resolved["fallback_server_host"] = resolved["fallback_server_host"][:-1]
         out_path = Path(self.datanadhi_dir) / ".config.resolved.json"
         write_to_json(out_path, resolved)
 
