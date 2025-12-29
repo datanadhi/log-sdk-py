@@ -5,6 +5,8 @@ from datanadhi.utils.files import load_from_yaml, write_to_json
 
 
 class ConfigBuilder:
+    """Build resolved configuration from YAML files and environment variables."""
+    
     def __init__(self, datanadhi_dir: Path):
         self.datanadhi_dir = datanadhi_dir
         self.config_yaml = {}
@@ -60,6 +62,7 @@ class ConfigBuilder:
         self._load_yaml()
 
     def _load_yaml(self):
+        """Load configuration YAML file if it exists."""
         for name in ("config.yml", "config.yaml"):
             p = Path(self.datanadhi_dir) / name
             if p.exists():
@@ -68,6 +71,7 @@ class ConfigBuilder:
         self.config_yaml = {}
 
     def _from_yaml(self, path: str):
+        """Get value from YAML using dot notation path."""
         cur = self.config_yaml
         for part in path.split("."):
             if not isinstance(cur, dict) or part not in cur:
@@ -76,6 +80,7 @@ class ConfigBuilder:
         return cur
 
     def _resolve(self, spec: dict):
+        """Resolve config value from YAML, env var, or default."""
         if spec.get("config"):
             val = self._from_yaml(spec["config"])
             if val is not None:
@@ -89,6 +94,7 @@ class ConfigBuilder:
         return spec.get("default")
 
     def build(self):
+        """Build and return fully resolved configuration dict."""
         resolved = {k: self._resolve(spec) for k, spec in self.mapping.items()}
         if resolved["server_host"].endswith("/"):
             resolved["server_host"] = resolved["server_host"][:-1]

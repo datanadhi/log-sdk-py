@@ -1,129 +1,278 @@
-# 🌊 Data Nadhi
+# Data Nadhi Python SDK
 
-**Data Nadhi** is an open-source platform that helps you manage the flow of data starting from your application logs all the way to your desired destinations — databases, APIs, or alerting systems.
+## Overview
 
-> **Direct. Transform. Deliver.**  
-> Flow your logs, trigger your pipelines.
+The Data Nadhi Python SDK is a **logging library** that extends Python's standard logging with:
+- **Rule-based routing** to trigger data pipelines
+- **Async, non-blocking delivery** to ensure zero impact on application performance
+- **Automatic failover** through EchoPost and fallback servers
+- **Structured logging** with trace ID support
 
----
-
-## 🧠 What is Data Nadhi?
-
-Data Nadhi provides a unified platform to **ingest, transform, and deliver** data — powered by **Temporal**, **MongoDB**, **Redis**, and **MinIO**.
-
-It connects easily with your applications using the **Data Nadhi SDK**, and gives you full control over how data moves across your system.
-
-### Core Concept
-- **Direct** – Collect logs and data from your applications or external sources.  
-- **Transform** – Use Temporal workflows to apply filters, enrichments, or custom transformations.  
-- **Deliver** – Send the final processed data to any configured destination — all handled reliably and asynchronously.
-
-Data Nadhi is designed to be **modular**, **developer-friendly**, and **ready for production**.
+The SDK behaves like Python's standard `logging` module but adds the ability to route logs to Data Nadhi pipelines based on configurable rules.
 
 ---
 
-## 🏗️ System Overview
+## Key Features
 
-The platform is built from multiple services and tools working together:
-
-| Component | Description |
-|------------|-------------|
-| [**data-nadhi-server**](https://github.com/Data-ARENA-Space/data-nadhi-server) | Handles incoming requests from the SDK and passes them to Temporal. |
-| [**data-nadhi-internal-server**](https://github.com/Data-ARENA-Space/data-nadhi-internal-server) | Internal service for managing entities, pipelines, and configurations. |
-| [**data-nadhi-temporal-worker**](https://github.com/Data-ARENA-Space/data-nadhi-temporal-worker) | Executes workflow logic and handles transformations and delivery. |
-| [**data-nadhi-sdk**](https://github.com/Data-ARENA-Space/data-nadhi-sdk) | Python SDK for logging and sending data from applications. |
-| [**data-nadhi-dev**](https://github.com/Data-ARENA-Space/data-nadhi-dev) | Local environment setup using Docker Compose for databases and Temporal. |
-| [**data-nadhi-documentation**](https://github.com/Data-ARENA-Space/data-nadhi-documentation) | Documentation site built with Docusaurus (you’re here now). |
-
-All components are connected through a shared Docker network, making local setup and development simple.
+- **Non-blocking**: Logging calls never block application execution
+- **Rule-based routing**: Define conditions to route logs to specific pipelines
+- **Multi-level delivery**: Primary server → EchoPost → Fallback server
+- **Health monitoring**: Automatic server health checks and recovery
+- **Queue management**: Built-in backpressure handling with drain workers
+- **Data persistence**: Failed deliveries are stored to disk for recovery
+- **Directory isolation**: Multiple independent logging pipelines per process
 
 ---
 
-## ⚙️ Features
+## Installation
 
-- 🧩 **Unified Pipeline** – Move data seamlessly from logs to destinations  
-- ⚙️ **Custom Transformations** – Define your own transformations using Temporal  
-- 🔄 **Reliable Delivery** – Retries, fault tolerance, and monitoring built in  
-- 🧠 **Easy Integration** – Simple SDK-based setup for applications  
-- 💡 **Developer Focused** – Dev containers and Docker-first setup for consistency  
+Install directly from the repository:
 
----
-
-## 📚 What's Inside this repository
-
-This is the Python logging SDK (`datanadhi` package) for Data Nadhi that acts as a normal logger but also sends the request to the Server using the API when required
-
-### Tech Stack
-- **Python(logging)** - Framework used to create temporal worker
-- **Docker** – For consistent local and production deployment 
-- **Docker Network (`datanadhi-net`)** – Shared network for connecting all services locally  
+```bash
+pip install git+https://github.com/Data-ARENA-Space/data-nadhi-sdk.git
+```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
+
+### 1. Set up environment variables
+
+```bash
+export DATANADHI_API_KEY="your-api-key"
+export DATANADHI_SERVER_HOST="http://localhost:5000"  # Optional
+```
+
+### 2. Create configuration directory
+
+```bash
+mkdir -p .datanadhi/rules
+```
+
+### 3. Define rules (`.datanadhi/rules/app.yml`)
+
+```yaml
+# Route ERROR logs to error pipeline
+- conditions:
+    - key: "log_record.level"
+      type: "exact"
+      value: "ERROR"
+  pipelines:
+    - "error-handler"
+  stdout: true
+
+# Route authenticated user logs to audit pipeline
+- conditions:
+    - key: "context.user.type"
+      type: "exact"
+      value: "authenticated"
+  pipelines:
+    - "audit-pipeline"
+```
+
+### 4. Use the logger
+
+```python
+from dotenv import load_dotenv
+from datanadhi import Logger
+
+load_dotenv()
+
+logger = Logger(module_name="my_app")
+
+logger.info(
+    "User login successful",
+    context={
+        "user": {
+            "id": "user123",
+            "type": "authenticated",
+            "email": "user@example.com"
+        }
+    }
+)
+
+logger.error(
+    "Database connection failed",
+    context={"database": "postgres", "retry_count": 3}
+)
+```
+
+---
+
+## How It Works
+
+1. **Log creation**: Logger evaluates log against configured rules
+2. **Rule matching**: Determines which pipelines to trigger and whether to print to stdout
+3. **Async submission**: Log is enqueued for background processing
+4. **Delivery**: Background workers route logs based on server health:
+   - Primary server (if healthy)
+   - EchoPost (if primary is down)
+   - Fallback server (if EchoPost unavailable)
+5. **Monitoring**: Health checks run automatically to restore primary routing
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATANADHI_API_KEY` | Yes | - | Authentication key for Data Nadhi server |
+| `DATANADHI_SERVER_HOST` | No | `http://data-nadhi-server:5000` | Primary server URL |
+| `DATANADHI_FALLBACK_SERVER_HOST` | No | `http://datanadhi-fallback-server:5001` | Fallback server URL |
+| `DATANADHI_QUEUE_SIZE` | No | `1000` | Async queue max size |
+| `DATANADHI_WORKERS` | No | `2` | Number of background workers |
+| `DATANADHI_EXIT_TIMEOUT` | No | `5` | Shutdown timeout (seconds) |
+
+### Configuration File (`.datanadhi/config.yml`)
+
+```yaml
+server:
+  host: http://localhost:5000
+  fallback_host: http://localhost:5001
+
+log:
+  level: INFO
+  datanadhi_log_level: INFO
+  stack_level: 0
+  skip_stack: 0
+
+async:
+  queue_size: 1000
+  workers: 2
+  exit_timeout: 5
+
+echopost:
+  disable: false
+```
+
+### Rules Configuration
+
+Rules are defined in `.datanadhi/rules/*.yml` files:
+
+```yaml
+- name: "error-logs"
+  conditions:
+    - key: "log_record.level"
+      type: "exact"
+      value: "ERROR"
+  pipelines:
+    - "error-pipeline"
+  stdout: true
+
+- name: "admin-actions"
+  any_condition_match: false  # AND logic
+  conditions:
+    - key: "context.user.role"
+      type: "exact"
+      value: "admin"
+    - key: "log_record.level"
+      type: "exact"
+      value: "INFO"
+  pipelines:
+    - "admin-audit"
+```
+
+**Condition types:**
+- `exact`: Exact string match
+- `partial`: Substring match
+- `regex`: Regular expression match
+
+**Fields:**
+- `any_condition_match`: `true` for OR logic, `false` for AND logic (default)
+- `negate`: Invert condition result
+
+---
+
+## Logger API
+
+### Initialization
+
+```python
+logger = Logger(
+    module_name="my_app",           # Optional: module identifier
+    handlers=[...],                  # Optional: custom handlers
+    datanadhi_dir=".datanadhi",     # Optional: config directory
+    log_level=20,                    # Optional: logging level
+    echopost_disable=False          # Optional: disable EchoPost
+)
+```
+
+### Logging Methods
+
+All methods support the same parameters:
+
+```python
+logger.debug(message, context={}, trace_id=None, exc_info=False, stack_info=False)
+logger.info(message, context={}, trace_id=None, exc_info=False, stack_info=False)
+logger.warning(message, context={}, trace_id=None, exc_info=False, stack_info=False)
+logger.error(message, context={}, trace_id=None, exc_info=False, stack_info=False)
+logger.critical(message, context={}, trace_id=None, exc_info=False, stack_info=False)
+logger.exception(message, context={}, trace_id=None)  # Captures exception automatically
+```
+
+**Parameters:**
+- `message` (str): Log message
+- `context` (dict): Structured data to attach to log
+- `trace_id` (str): Optional trace ID for request tracking
+- `exc_info` (bool): Include exception information
+- `stack_info` (bool): Include stack trace
+- `**kwargs`: Additional fields merged into context
+
+**Returns:** Internal payload dict if rules are set, None otherwise
+
+### Waiting for Completion
+
+```python
+logger.wait_till_logs_pushed()  # Block until all queued logs are processed
+```
+
+---
+
+## Architecture
+
+The SDK follows a strict delivery hierarchy:
+
+1. **Primary Server** (HTTP POST) - First choice for log delivery
+2. **EchoPost** (Unix socket) - Local buffer when primary is down
+3. **Fallback Server** (Batch HTTP POST) - Remote fallback when EchoPost unavailable
+4. **Disk Persistence** - Last resort for failed deliveries
+
+### Components
+
+- **Logger**: Main interface for logging
+- **Rules Engine**: Evaluates conditions and determines routing
+- **SafeQueue**: Thread-safe queue with writeback buffer
+- **AsyncProcessor**: Manages worker threads and delivery
+- **ServerHealthMonitor**: Tracks server availability
+- **DrainWorker**: Activates at 90% queue capacity
+- **EchoPost**: Optional local buffer agent
+
+---
+
+## Development
 
 ### Prerequisites
 
-- Docker & Docker Compose  
-- VS Code (with Dev Containers extension)
+- Python 3.8+
+- Docker (for EchoPost testing)
 
-### Setup Instructions
+### Local Setup
 
-> If you want to modify or test it, open it directly in a Dev Container.
+```bash
+# Clone repository
+git clone https://github.com/Data-ARENA-Space/data-nadhi-sdk.git
+cd data-nadhi-sdk
 
-**To use it as a package:**
-1. Install it
-    ```bash
-    pip install git+https://github.com/Data-ARENA-Space/data-nadhi-sdk.git
-    ```
-2. Add the following to your `.env` file
-    ```bash
-    DATANADHI_API_KEY=<API-KEY>
-    DATANADHI_SERVER_HOST=http://localhost
-    ```
-    - If your service runs inside the same Docker network, remove the `DATANADHI_SERVER_HOST` variable.
-3. Add Log config file in `.datanadhi` folder - See [Log Config](/docs/architecture/sdk/log-config.md)
-4. Try logging
-    ```python
-    from dotenv import load_dotenv
-    from datanadhi import DataNadhiLogger
-    load_dotenv()
+# Install dependencies
+pip install -e .
 
-    def main():
-        # Set up API key (in production, use environment variable)
-        # os.environ["DATANADHI_API_KEY"] = "dummy_api_key_123"
-
-        # Initialize logger with module name
-        logger = DataNadhiLogger(module_name="test_app")
-
-        logger.info(
-            "Testing basic stuff",
-            context={
-                "user": {
-                    "id": "user123",
-                    "status": "active",
-                    "email_verified": True,
-                    "type": "authenticated",
-                    "permissions": {"guest_allowed": False},
-                }
-            },
-        )
-    ```
-
+# Run tests
+pytest tests/
+```
 ---
 
-## 🔗 Links
+## License
 
-- **Main Website**: [https://datanadhi.com](https://datanadhi.com)
-- **Documentation**: [https://docs.datanadhi.com](https://docs.datanadhi.com)
-- **GitHub Organization**: [Data-ARENA-Space](https://github.com/Data-ARENA-Space)
-
-## 📄 License
-
-This project is open source and available under the [GNU Affero General Public License v3.0](LICENSE).
-
-## 💬 Community
-
-- **GitHub Discussions**: [Coming soon]
-- **Discord**: [Data Nadhi Community](https://discord.gg/gMwdfGfnby)
-- **Issues**: [GitHub Issues](https://github.com/Data-ARENA-Space/data-nadhi-documentation/issues)
+Licensed under the [**GNU Affero General Public License v3.0 (AGPLv3)**](LICENSE).

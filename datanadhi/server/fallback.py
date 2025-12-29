@@ -8,14 +8,7 @@ import requests
 
 
 def _encode_jsonl_gz(dicts: list[dict]) -> bytes:
-    """Encode list of dicts as gzipped JSONL.
-
-    Args:
-        dicts: List of dictionaries to encode
-
-    Returns:
-        Gzipped JSONL bytes
-    """
+    """Encode list of dicts as gzipped JSONL bytes."""
     buf = io.BytesIO()
     with gzip.GzipFile(fileobj=buf, mode="w") as gz:
         for obj in dicts:
@@ -27,17 +20,7 @@ def _encode_jsonl_gz(dicts: list[dict]) -> bytes:
 def send(
     session: requests.Session, server_host: str, payloads: list[dict], api_key: str
 ) -> dict:
-    """Send batch of logs to fallback server.
-
-    Args:
-        session: Requests session
-        server_host: Server URL
-        payloads: List of log payloads
-        api_key: API key for authentication
-
-    Returns:
-        Dict with keys: success, status_code, is_failure, is_unavailable
-    """
+    """Send batch of logs to fallback server as gzipped JSONL."""
     try:
         compressed_data = _encode_jsonl_gz(payloads)
 

@@ -4,15 +4,7 @@ import requests
 
 
 def is_healthy(session: requests.Session, server_host: str) -> bool:
-    """Check if primary server is healthy.
-
-    Args:
-        session: Requests session
-        server_host: Server URL
-
-    Returns:
-        True if server responds with 2xx, False otherwise
-    """
+    """Check if primary server responds with 2xx status."""
     try:
         response = session.get(f"{server_host}/", timeout=2)
         return 200 <= response.status_code < 300
@@ -23,17 +15,7 @@ def is_healthy(session: requests.Session, server_host: str) -> bool:
 def send(
     session: requests.Session, server_host: str, payload: dict, api_key: str
 ) -> dict:
-    """Send log to primary server.
-
-    Args:
-        session: Requests session
-        server_host: Server URL
-        payload: Log payload with 'pipelines' and 'log_data'
-        api_key: API key for authentication
-
-    Returns:
-        Dict with keys: success, status_code, is_failure, is_unavailable
-    """
+    """Send log to primary server. Returns status dict."""
     try:
         response = session.post(
             f"{server_host}/log",

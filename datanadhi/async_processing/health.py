@@ -7,7 +7,7 @@ import requests
 
 
 class ServerHealthMonitor:
-    """Monitor health of primary and fallback servers."""
+    """Track server health and run background recovery checks."""
 
     def __init__(self, logger=None):
         self.session = requests.Session()
@@ -17,20 +17,13 @@ class ServerHealthMonitor:
         self.logger = logger
 
     def _get_key(self, server_host: str, is_fallback: bool = False) -> str:
-        """Get unique key for server."""
+        """Generate unique key for server (prefixed if fallback)."""
         return f"fallback:{server_host}" if is_fallback else server_host
 
     def set_health_down(
         self, server_host: str, is_fallback: bool = False, health_check_fn=None
     ):
-        """Mark server as down and start health checker.
-
-        Args:
-            server_host: Server URL
-            is_fallback: Whether this is fallback server
-            health_check_fn: Function to check health
-                (signature: (session, server_host) -> bool)
-        """
+        """Mark server down and start background health checker."""
         key = self._get_key(server_host, is_fallback)
 
         with self._lock:
@@ -59,20 +52,12 @@ class ServerHealthMonitor:
                 self._check_threads[key] = thread
 
     def is_server_up(self, server_host: str, is_fallback: bool = False) -> bool:
-        """Check if server is marked as up.
-
-        Args:
-            server_host: Server URL
-            is_fallback: Whether this is fallback server
-
-        Returns:
-            True if server is healthy, False otherwise
-        """
+        """Check if server is currently marked as healthy."""
         key = self._get_key(server_host, is_fallback)
         return self._is_healthy.get(key, True)
 
     def _health_check_loop(self, server_host: str, is_fallback: bool, health_check_fn):
-        """Loop: check health until server is up."""
+        """Poll server health until recovery, then exit."""
         key = self._get_key(server_host, is_fallback)
 
         while True:
@@ -107,7 +92,7 @@ class ServerHealthMonitor:
                 continue
 
     def _default_health_check(self, server_host: str) -> bool:
-        """Default health check implementation."""
+        """Check server health via GET request to root."""
         try:
             response = self.session.get(f"{server_host}/", timeout=2)
             return 200 <= response.status_code < 300

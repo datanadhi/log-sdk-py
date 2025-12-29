@@ -6,17 +6,20 @@ import yaml
 
 
 def load_from_yaml(path: Path):
+    """Load YAML file and return parsed content."""
     with open(path) as f:
         return yaml.safe_load(f)
 
 
 def write_to_json(path: Path, data: dict):
+    """Write data to JSON file using orjson."""
     with open(path, "wb") as f:
         blob = orjson.dumps(data)
         f.write(blob)
 
 
 def read_from_json(path: Path):
+    """Read and parse JSON file using orjson."""
     with open(path, "rb") as f:
         return orjson.loads(f.read())
 

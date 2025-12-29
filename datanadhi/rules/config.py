@@ -14,6 +14,8 @@ from datanadhi.utils.files import load_from_yaml, read_from_json, write_to_json
 
 
 class ResolvedRules:
+    """Load and resolve rules from YAML files."""
+    
     def __init__(self, datanadhi_dir: Path):
         self.datanadhi_dir = datanadhi_dir
         self.rules = {}
@@ -21,9 +23,11 @@ class ResolvedRules:
 
     @staticmethod
     def get_rule_dict(rule: set[RawCondition]):
+        """Convert set of conditions to list of dicts."""
         return [cond.model_dump(exclude_none=True) for cond in rule]
 
     def remove_none_or_defaults(self, rule: RawRule):
+        """Remove None values and default values from rule."""
         if rule.stdout is False:
             rule.stdout = None
         if rule.pipelines == ():
@@ -35,6 +39,7 @@ class ResolvedRules:
         return rule
 
     def get_structured_rule(self, rule):
+        """Parse and validate a single rule."""
         try:
             rule = RawRule(**rule)
             self.remove_none_or_defaults(rule)
@@ -51,6 +56,7 @@ class ResolvedRules:
             return None
 
     def add_rule(self, rule: RawRule):
+        """Add rule to the resolved rules collection."""
         action = RawAction(stdout=rule.stdout, pipelines=rule.pipelines)
         if action not in self.rules:
             self.rules[action] = {"or": set(), "other": set()}
@@ -61,6 +67,7 @@ class ResolvedRules:
             self.rules[action]["other"].add(frozenset(rule.conditions))
 
     def get_rules_from_file(self, path: Path):
+        """Load and parse rules from a single YAML file."""
         data = load_from_yaml(path)
         if not isinstance(data, list):
             return
@@ -70,6 +77,7 @@ class ResolvedRules:
                 self.add_rule(modified_rule)
 
     def action_rule_to_json(self):
+        """Convert internal rule structure to JSON format."""
         rules_json = []
         for action, rules in self.rules.items():
             rule_json = {"action": {}, "rules": []}
@@ -95,6 +103,7 @@ class ResolvedRules:
         return rules_json
 
     def build_rules_from_files(self):
+        """Load all rule files and build resolved rules."""
         paths = glob.glob(f"{self.datanadhi_dir}/rules/*.yaml")
         paths += glob.glob(f"{self.datanadhi_dir}/rules/*.yml")
 
@@ -106,6 +115,7 @@ class ResolvedRules:
         return action_rules
 
     def get(self):
+        """Get resolved rules, loading from cache or building."""
         if os.path.exists(self.path):
             return RuleActions(read_from_json(self.path))
         return RuleActions(self.build_rules_from_files())

@@ -6,6 +6,8 @@ from datanadhi.utils.files import read_from_json
 
 
 class ResolvedConfig:
+    """Load or build resolved configuration with overrides."""
+    
     force_disable_echopost = False
 
     allowed_overrides = {
@@ -20,6 +22,7 @@ class ResolvedConfig:
         self.path = Path(datanadhi_dir) / ".config.resolved.json"
 
     def _load_or_build(self):
+        """Load existing config or build from scratch."""
         if self.path.exists():
             return read_from_json(self.path)
 
@@ -27,6 +30,7 @@ class ResolvedConfig:
         return builder.build()
 
     def _apply_overrides(self, cfg: dict):
+        """Apply parameter overrides and normalize values."""
         for k, v in self.overrides.items():
             if k in self.allowed_overrides:
                 cfg[k] = v
@@ -46,5 +50,6 @@ class ResolvedConfig:
         return cfg
 
     def get(self):
+        """Get fully resolved and normalized configuration."""
         cfg = self._load_or_build()
         return self._apply_overrides(cfg)

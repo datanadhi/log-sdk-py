@@ -18,6 +18,7 @@ _LOCKS_GUARD = threading.Lock()
 
 
 def get_download_url():
+    """Determine EchoPost download URL for current platform."""
     system = platform.system().lower()
     machine = platform.machine().lower()
 
@@ -48,6 +49,7 @@ def get_download_url():
 
 
 def get_start_lock(datanadhi_dir: Path) -> threading.Lock:
+    """Get or create lock for starting EchoPost in this directory."""
     key = str(datanadhi_dir)
     with _LOCKS_GUARD:
         if key not in _LOCKS:
@@ -56,22 +58,22 @@ def get_start_lock(datanadhi_dir: Path) -> threading.Lock:
 
 
 def get_echopost_dir(datanadhi_dir: Path):
+    """Get EchoPost directory path."""
     return Path(datanadhi_dir) / "echopost"
 
 
 def get_binary_path(datanadhi_dir: Path):
+    """Get EchoPost binary file path."""
     return get_echopost_dir(datanadhi_dir) / "echopost"
 
 
 def get_socket_path(datanadhi_dir: Path):
+    """Get EchoPost Unix socket path."""
     return get_echopost_dir(datanadhi_dir) / "data-nadhi-agent.sock"
 
 
 def ensure_binary_exists(datanadhi_dir: Path, resolved_config: dict):
-    """
-    Ensure echopost binary exists.
-    Return: (available: bool, info: dict | None)
-    """
+    """Download EchoPost binary if needed. Returns (success, error_info)."""
     if resolved_config.get("echopost_disable"):
         return False, {"disabled": True}
 
@@ -118,10 +120,7 @@ def ensure_binary_exists(datanadhi_dir: Path, resolved_config: dict):
 def start_echopost_detached(
     datanadhi_dir: Path, api_key: str, server_host: str
 ) -> bool:
-    """
-    Start the echopost binary as an independent, detached background process.
-    Returns True if the spawn succeeded (does not guarantee socket readiness).
-    """
+    """Start EchoPost as detached background process. Returns spawn success."""
     binary_path = get_binary_path(datanadhi_dir)
     echopost_dir = get_echopost_dir(datanadhi_dir)
 
@@ -155,8 +154,7 @@ def start_echopost_detached(
 def send_log_over_unix_grpc(
     datanadhi_dir: Path, pipelines: list[str], payload: dict, api_key: str
 ) -> bool:
-    """Perform the SendLog RPC over a unix domain socket and return a
-    dict with 'success' and 'message'."""
+    """Send log to EchoPost via gRPC over Unix socket. Returns success."""
     socket_path = get_socket_path(datanadhi_dir)
     target = f"unix://{str(socket_path)}"
     req = logagent_pb2.LogRequest(
@@ -176,13 +174,13 @@ def send_log_over_unix_grpc(
 
 
 def socket_exists(datanadhi_dir: Path) -> bool:
-    """Check if the socket file exists."""
+    """Check if EchoPost socket file exists."""
     socket_path = get_socket_path(datanadhi_dir)
     return socket_path.exists()
 
 
 def delete_socket_if_exists(datanadhi_dir: Path):
-    """Delete the socket file if it exists."""
+    """Delete EchoPost socket file if it exists."""
     socket_path = get_socket_path(datanadhi_dir)
     try:
         if socket_path.exists():
@@ -195,7 +193,7 @@ def delete_socket_if_exists(datanadhi_dir: Path):
 def wait_for_socket(
     datanadhi_dir: Path, timeout: float = 2.0, poll_interval: float = 0.05
 ) -> bool:
-    """Wait up to `timeout` seconds for socket_path to exist."""
+    """Wait for EchoPost socket to exist (polls every 50ms)."""
     start = time.time()
     while time.time() - start < timeout:
         if socket_exists(datanadhi_dir):
@@ -207,6 +205,7 @@ def wait_for_socket(
 def start_if_socket_not_exists(
     datanadhi_dir: Path, api_key: str, server_host: str
 ) -> bool:
+    """Start EchoPost if socket doesn't exist. Returns success."""
     if not socket_exists(datanadhi_dir):
         lock = get_start_lock(datanadhi_dir)
         with lock:

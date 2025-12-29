@@ -23,10 +23,7 @@ _LOCK = threading.Lock()
 def get_processor_for_directory(
     datanadhi_dir: Path, config: dict, logger
 ) -> "AsyncProcessor":
-    """Get or create processor for this directory.
-
-    Uses singleton pattern - one processor per datanadhi_dir.
-    """
+    """Get or create processor for directory (singleton per directory)."""
     key = str(datanadhi_dir.absolute())
 
     if key in _PROCESSORS:
@@ -39,14 +36,7 @@ def get_processor_for_directory(
 
 
 class AsyncProcessor:
-    """Async processor with queue-based workers and overflow protection.
-
-    Features:
-    - Non-blocking submission via SafeQueue
-    - Normal workers handle primary/echopost/fallback routing
-    - Drain worker automatically starts at 90% capacity
-    - Health monitoring with automatic recovery
-    """
+    """Async processor managing workers, queue, and delivery routing."""
 
     def __init__(self, datanadhi_dir: Path, config: dict, logger):
         self.datanadhi_dir = Path(datanadhi_dir).absolute()
@@ -81,7 +71,7 @@ class AsyncProcessor:
         atexit.register(self.flush)
 
     def _start_workers(self):
-        """Start daemon worker threads."""
+        """Start background worker threads as daemons."""
         for i in range(self.worker_count):
             t = threading.Thread(
                 target=self._worker_loop, name=f"datanadhi-{i}", daemon=True
@@ -90,7 +80,7 @@ class AsyncProcessor:
             self.workers.append(t)
 
     def _worker_loop(self):
-        """Main worker loop: process items from queue."""
+        """Main worker loop processing items and routing to servers."""
         session = requests.Session()
 
         try:
@@ -295,15 +285,7 @@ class AsyncProcessor:
             self.queue.writeback_batch([item])
 
     def submit(self, pipelines: list[str], payload: dict) -> bool:
-        """Submit log for async processing.
-
-        Args:
-            pipelines: List of pipeline IDs to trigger
-            payload: Log data payload
-
-        Returns:
-            True if submitted successfully, False if queue is full
-        """
+        """Submit log for async processing. Returns True if queued."""
         success = self.queue.add((pipelines, payload))
 
         # Check if drain worker should start
@@ -313,15 +295,12 @@ class AsyncProcessor:
         return success
 
     def _wait_till_drain_complete(self):
-        """Wait until the queue is fully drained."""
+        """Block until queue is empty."""
         while not self.queue.empty():
             time.sleep(0.1)
 
     def flush(self):
-        """Wait for queue to drain (best-effort).
-
-        Called automatically on exit via atexit.
-        """
+        """Wait for queue to drain on exit (best-effort with timeout)."""
         if not self._shutdown.is_set():
 
             def wait_for_queue():

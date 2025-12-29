@@ -12,7 +12,7 @@ from datanadhi.echopost.binary import (
 def wait_for_socket(
     datanadhi_dir: Path, timeout: float = 2.0, poll_interval: float = 0.05
 ) -> bool:
-    """Wait up to `timeout` seconds for socket_path to exist."""
+    """Wait for EchoPost socket to exist (polls every 50ms)."""
     start = time.time()
     while time.time() - start < timeout:
         if socket_exists(datanadhi_dir):
@@ -22,6 +22,7 @@ def wait_for_socket(
 
 
 class EchoPostLink:
+    """Manage EchoPost startup and communication."""
     def __init__(self):
         self._LOCKS = {}
         self._LOCKS_GUARD = threading.Lock()

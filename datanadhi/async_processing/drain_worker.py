@@ -7,13 +7,7 @@ from datanadhi.utils.files import store_dropped_data
 
 
 class DrainWorker:
-    """Worker that drains queue to fallback server when it hits 90% capacity.
-
-    Lifecycle:
-    - Starts when queue reaches 90% full
-    - Drains batches to fallback server until queue is at 10%
-    - Dies after draining completes
-    """
+    """Emergency worker to drain queue to fallback at 90% capacity."""
 
     def __init__(
         self,
@@ -25,17 +19,7 @@ class DrainWorker:
         logger,
         datanadhi_dir,
     ):
-        """Initialize drain worker.
-
-        Args:
-            queue: SafeQueue instance
-            fallback_server_host: Fallback server URL
-            api_key: API key for authentication
-            send_fn: Function to send batch (signature:
-                (session, host, items, api_key) -> result_dict)
-            health_check_fn: Function to check health
-                (signature: (session, host) -> bool)
-        """
+        """Initialize drain worker with queue and fallback config."""
         self.queue = queue
         self.fallback_server_host = fallback_server_host
         self.api_key = api_key
@@ -49,7 +33,7 @@ class DrainWorker:
         self._is_running = False
 
     def start_if_needed(self):
-        """Start drain worker if queue is at 90% and worker not already running."""
+        """Start drain worker if queue ≥90% and not already running."""
         fill_pct = self.queue.fill_percentage()
 
         if fill_pct >= 0.90:
@@ -73,7 +57,7 @@ class DrainWorker:
         return False
 
     def _drain_loop(self):
-        """Main drain loop: drain queue until it's at 10%."""
+        """Drain queue in batches until it reaches 10% capacity."""
         import requests
 
         session = requests.Session()
@@ -172,11 +156,7 @@ class DrainWorker:
             )
 
     def _wait_for_healthy_server(self, session) -> bool:
-        """Wait for fallback server to be healthy.
-
-        Returns:
-            True if server became healthy, False if timeout/error
-        """
+        """Wait for fallback server health (10s timeout). Returns success."""
         max_attempts = 100  # 10 seconds max wait
 
         for _ in range(max_attempts):

@@ -8,6 +8,11 @@ __all__ = ["FileHandler", "StreamHandler", "Formatter", "JsonFormatter", "Handle
 
 
 def get_logger(handlers, log_level, module_name, object_id):
+    """Get or create a logger with the specified configuration.
+    
+    Returns existing logger if already configured, otherwise creates new one
+    with provided handlers and log level.
+    """
     logger = logging.getLogger(f"{module_name}.{object_id}")
     if logger.handlers:
         return logger

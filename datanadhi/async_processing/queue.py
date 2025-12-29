@@ -5,7 +5,7 @@ from queue import Empty, Full, Queue
 
 
 class SafeQueue:
-    """Thread-safe queue wrapper with batch operations and overflow protection.
+    """Thread-safe queue with batch operations and writeback buffer.
 
     Features:
     - get() returns None instead of raising Empty
@@ -21,11 +21,7 @@ class SafeQueue:
         self._writeback_buffer = []  # Temporary buffer for failed items
 
     def add(self, item: tuple) -> bool:
-        """Add item to queue.
-
-        Returns:
-            True if added successfully, False if queue is full
-        """
+        """Add item to queue. Returns True if successful, False if full."""
         try:
             self._queue.put_nowait(item)
             return True
@@ -33,22 +29,14 @@ class SafeQueue:
             return False
 
     def _get(self, timeout: float = 1.0) -> tuple | None:
-        """Get one item from queue.
-
-        Returns:
-            Item tuple or None if queue is empty
-        """
+        """Get one item from queue. Returns None if empty."""
         try:
             return self._queue.get(block=True, timeout=timeout)
         except Empty:
             return None
 
     def get(self, timeout: float = 1.0) -> tuple | None:
-        """Get one item from queue.
-
-        Returns:
-            Item tuple or None if queue is empty
-        """
+        """Get one item, attempting writeback drain first."""
         item = self._get(timeout=timeout)
         self._try_drain_writeback()
         if item is None:
@@ -56,7 +44,7 @@ class SafeQueue:
         return item
 
     def _try_drain_writeback(self):
-        """Non-blocking writeback drain. Only runs when queue *might* have space."""
+        """Try draining writeback buffer to queue without blocking."""
         with self._lock:
             if not self._writeback_buffer:
                 return
@@ -75,14 +63,7 @@ class SafeQueue:
                 break
 
     def get_batch(self, n: int) -> list[tuple]:
-        """Get up to n items from queue.
-
-        Args:
-            n: Maximum number of items to retrieve
-
-        Returns:
-            List of items (may be less than n if queue doesn't have enough)
-        """
+        """Get up to n items from queue without blocking."""
         items = []
         for _ in range(n):
             try:
@@ -92,17 +73,7 @@ class SafeQueue:
         return items
 
     def writeback_batch(self, items: list[tuple]) -> int:
-        """Write back failed items to queue.
-
-        Attempts to put items back into queue. If queue is full,
-        stores in temporary buffer and will try again on next add().
-
-        Args:
-            items: List of items to write back
-
-        Returns:
-            Number of items successfully written back immediately
-        """
+        """Write back items to queue or buffer. Returns count written."""
         written = 0
 
         # First try to write from buffer if any
@@ -148,10 +119,7 @@ class SafeQueue:
         return self._queue.empty() and not self._writeback_buffer
 
     def fill_percentage(self) -> float:
-        """Get fill percentage (0.0 to 1.0+).
-
-        Can exceed 1.0 if writeback buffer is not empty.
-        """
+        """Get fill percentage (0.0 to 1.0+). Includes writeback buffer."""
         queue_size = self._queue.qsize()
         buffer_size = len(self._writeback_buffer)
         total = queue_size + buffer_size
