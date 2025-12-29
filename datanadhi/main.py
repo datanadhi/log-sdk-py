@@ -81,6 +81,7 @@ class Logger:
                 trace_id=f"datanadhi-internal-{self.module_name}",
                 _datanadhi_internal=True,
             )
+            self.config["echopost_disable"] = True
             return
         if success:
             self.debug(
@@ -100,6 +101,7 @@ class Logger:
                 trace_id=f"datanadhi-internal-{self.module_name}",
                 _datanadhi_internal=True,
             )
+            self.config["echopost_disable"] = True
 
     def _initialise_processor(self):
         """Initialize async processor."""

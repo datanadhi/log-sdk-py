@@ -101,8 +101,7 @@ class DrainWorker:
                 # Get batch of items
                 items = self.queue.get_batch(100)
                 if not items:
-                    time.sleep(0.1)
-                    continue
+                    break
 
                 # Convert to payload format
                 payloads = [
@@ -180,7 +179,7 @@ class DrainWorker:
         """
         max_attempts = 100  # 10 seconds max wait
 
-        for attempt in range(max_attempts):
+        for _ in range(max_attempts):
             try:
                 if self.health_check_fn(session, self.fallback_server_host):
                     return True
